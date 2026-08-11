@@ -1,4 +1,5 @@
-@import "tailwindcss";
+/* Tailwind CSS loaded via CDN in index.html */
+
 
 @layer base {
   html {
