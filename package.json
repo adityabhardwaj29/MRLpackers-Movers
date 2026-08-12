@@ -6,8 +6,8 @@
   "scripts": {
     "start": "node start.js",
     "dev": "node start.js",
-    "build": "node node_modules/typescript/bin/tsc --noEmit",
-    "clean": "rm -rf public/dist",
+    "build": "node build.js",
+    "clean": "rm -rf dist public/dist",
     "lint": "node node_modules/typescript/bin/tsc --noEmit"
   },
   "dependencies": {
@@ -20,7 +20,6 @@
     "react-dom": "^19.0.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",

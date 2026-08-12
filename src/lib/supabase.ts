@@ -1,8 +1,20 @@
-import { supabase } from '../supabaseClient.js';
+import { createClient } from '@supabase/supabase-js';
 import { QuoteFormData, DbBooking, BookingStatus } from '../types';
 import { COMPANY_INFO } from '../data';
 
-export { supabase };
+const supabaseUrl =
+  (typeof process !== 'undefined' && process.env?.REACT_APP_SUPABASE_URL) ||
+  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_URL) ||
+  (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL) ||
+  'https://fgjiztduqgoblwfwzpab.supabase.co';
+
+const supabaseAnonKey =
+  (typeof process !== 'undefined' && process.env?.REACT_APP_SUPABASE_ANON_KEY) ||
+  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY) ||
+  (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_ANON_KEY) ||
+  'sb_publishable_1szoi4S1gK0toJPcWJBPeA__yQVfCQq';
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export const isSupabaseConfigured = true;
 
