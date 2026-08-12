@@ -106,7 +106,7 @@ export const AboutSection: React.FC = () => {
           {/* Bento Box 1: Image & Experience Badge - 6 Cols */}
           <div className="lg:col-span-6 bg-slate-900 rounded-3xl p-6 relative overflow-hidden text-white flex flex-col justify-between shadow-sm min-h-[360px] border border-slate-800">
             <img
-              src="/src/assets/images/household_packing_1785558040208.jpg"
+              src="/assets/images/household_packing_1785558040208.jpg"
               alt="MRL Packers & Movers Packing Process"
               className="absolute inset-0 w-full h-full object-cover opacity-40 filter brightness-75"
               referrerPolicy="no-referrer"

@@ -3,6 +3,23 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
+function copyRecursiveSync(src, dest) {
+  const exists = fs.existsSync(src);
+  const stats = exists && fs.statSync(src);
+  const isDirectory = exists && stats.isDirectory();
+  if (isDirectory) {
+    if (!fs.existsSync(dest)) {
+      fs.mkdirSync(dest, { recursive: true });
+    }
+    fs.readdirSync(src).forEach((childItemName) => {
+      if (childItemName === 'dist' || childItemName === '.aistudio') return;
+      copyRecursiveSync(path.join(src, childItemName), path.join(dest, childItemName));
+    });
+  } else {
+    fs.copyFileSync(src, dest);
+  }
+}
+
 async function build() {
   console.log('1. Checking TypeScript types...');
   try {
@@ -54,17 +71,18 @@ async function build() {
 
   console.log('4. Copying static assets and preparing index.html for Vercel...');
   
-  // Copy static files from public/ into dist/
+  // Recursively copy all static files from public/ into dist/
   if (fs.existsSync('public')) {
     const publicFiles = fs.readdirSync('public');
     for (const file of publicFiles) {
       if (file === 'dist') continue; // Don't copy nested dev dist
-      const srcPath = path.join('public', file);
-      const destPath = path.join('dist', file);
-      if (fs.statSync(srcPath).isFile()) {
-        fs.copyFileSync(srcPath, destPath);
-      }
+      copyRecursiveSync(path.join('public', file), path.join('dist', file));
     }
+  }
+
+  // Recursively copy root assets/ into dist/assets/
+  if (fs.existsSync('assets')) {
+    copyRecursiveSync('assets', path.join('dist', 'assets'));
   }
 
   // Copy root brand assets if present
