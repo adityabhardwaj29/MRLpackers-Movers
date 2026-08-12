@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Navbar, PageType } from './components/Navbar';
 import { HomePage } from './pages/HomePage';
 import { ServicesPage } from './pages/ServicesPage';
@@ -8,7 +8,6 @@ import { PrivacyPolicyView } from './components/PrivacyPolicyView';
 import { TermsConditionsView } from './components/TermsConditionsView';
 import { Footer } from './components/Footer';
 
-import { LeadCaptureModal } from './components/LeadCaptureModal';
 import { FloatingBottomBar } from './components/FloatingBottomBar';
 
 import { ServiceItem, PricingPlan, QuoteFormData } from './types';
@@ -18,23 +17,8 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('home');
   const [themeColor, setThemeColor] = useState<'indigo' | 'navy' | 'emerald'>('indigo');
 
-  // Modals
-  const [isLeadCaptureOpen, setIsLeadCaptureOpen] = useState(false);
-
   // Success Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // Auto trigger lead popup after 12 seconds
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const hasSeenPopup = sessionStorage.getItem('rr_lead_popup_seen');
-      if (!hasSeenPopup) {
-        setIsLeadCaptureOpen(true);
-        sessionStorage.setItem('rr_lead_popup_seen', 'true');
-      }
-    }, 12000);
-    return () => clearTimeout(timer);
-  }, []);
 
   const handleQuoteFormSubmit = (data: QuoteFormData) => {
     setToastMessage(`✅ Quote Request Received for ${data.name || 'Customer'}! Our team will call you within 15 minutes.`);
@@ -87,16 +71,12 @@ export default function App() {
         const contactSection = document.getElementById('contact');
         if (contactSection) {
           contactSection.scrollIntoView({ behavior: 'smooth' });
-        } else {
-          setIsLeadCaptureOpen(true);
         }
       }, 100);
     } else {
       const contactSection = document.getElementById('contact');
       if (contactSection) {
         contactSection.scrollIntoView({ behavior: 'smooth' });
-      } else {
-        setIsLeadCaptureOpen(true);
       }
     }
   };
@@ -175,13 +155,7 @@ export default function App() {
         onNavigatePage={handleNavigatePage}
       />
 
-      {/* Modals & Floating Mobile Bar */}
-      <LeadCaptureModal
-        isOpen={isLeadCaptureOpen}
-        onClose={() => setIsLeadCaptureOpen(false)}
-        onSubmitQuoteForm={handleQuoteFormSubmit}
-      />
-
+      {/* Floating Mobile Contact Bar */}
       <FloatingBottomBar
         onOpenQuoteModal={handleScrollToContact}
       />
