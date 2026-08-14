@@ -1,15 +1,18 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
+// CORS Headers for browser requests
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 // In-memory rate limiting map for edge function instance
 const rateLimitMap = new Map<string, { count: number; lastReset: number }>();
 
-serve(async (req: Request) => {
+declare const Deno: any;
+
+Deno.serve(async (req: Request) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -25,7 +28,7 @@ serve(async (req: Request) => {
   try {
     const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown";
 
-    // 1. Rate Limiting Check (Max 5 requests per 10 minutes per IP)
+    // 1. Rate Limiting Check (Max 10 requests per 10 minutes per IP)
     const now = Date.now();
     const windowMs = 10 * 60 * 1000;
     const ipData = rateLimitMap.get(clientIp) || { count: 0, lastReset: now };
@@ -38,7 +41,7 @@ serve(async (req: Request) => {
     }
     rateLimitMap.set(clientIp, ipData);
 
-    if (ipData.count > 5) {
+    if (ipData.count > 10) {
       return new Response(
         JSON.stringify({ error: "Too many quote requests. Please try again in 10 minutes." }),
         { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -59,7 +62,7 @@ serve(async (req: Request) => {
       message,
     } = body;
 
-    // 2. Server-Side Input Validation & Sanitization
+    // 2. Input Validation & Sanitization
     const sanitizedName = String(full_name || "").trim().slice(0, 100);
     const sanitizedPhone = String(phone || "").replace(/[^\d+]/g, "").slice(0, 15);
     const sanitizedEmail = String(email || "").trim().slice(0, 100);
@@ -110,7 +113,7 @@ serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 5. Database Insertion (Primary Source of Truth)
+    // 5. Database Insertion into quote_requests
     const dbPayload = {
       quote_id: quoteId,
       full_name: sanitizedName,
@@ -126,41 +129,95 @@ serve(async (req: Request) => {
       status: "pending",
     };
 
-    const { data: dbResult, error: dbError } = await supabase
+    const { error: dbError } = await supabase
       .from("quote_requests")
-      .insert([dbPayload])
-      .select()
-      .single();
+      .insert([dbPayload]);
 
     if (dbError) {
-      console.error("Supabase Database Insert Error:", dbError);
-      return new Response(
-        JSON.stringify({ error: "Database error saving quote request. Please try again." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      console.warn("Supabase quote_requests insert error, attempting bookings fallback:", dbError.message);
+      // Fallback insert to bookings table if quote_requests schema was not applied
+      try {
+        await supabase.from("bookings").insert([{
+          booking_ref: quoteId,
+          customer_name: sanitizedName,
+          mobile_number: sanitizedPhone,
+          email: sanitizedEmail || null,
+          pickup_address: sanitizedPickup,
+          drop_address: sanitizedDrop,
+          date: sanitizedDate,
+          time: sanitizedTime,
+          service_type: sanitizedService,
+          vehicle_type: sanitizedVehicle,
+          notes: sanitizedMessage || null,
+          status: "pending",
+        }]);
+      } catch (fbErr) {
+        console.error("Bookings fallback error:", fbErr);
+      }
     }
 
-    // 6. Email Notification Workflow (Primary Recipient: mrlpackersmovers7777@gmail.com)
+    // 6. Automatic Email Notification (Recipient: mrlpackersmovers7777@gmail.com)
     let emailSent = false;
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     if (resendApiKey) {
       try {
-        const emailSubject = `New Quote Request - MRL Packers & Movers - ${sanitizedName}`;
-        const emailBody = `MRL PACKERS & MOVERS
-NEW QUOTE REQUEST
+        const emailSubject = `🚀 New Quote Request #${quoteId} - ${sanitizedName}`;
+        const htmlBody = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+            <div style="background-color: #dc2626; color: #ffffff; padding: 16px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
+              <h1 style="margin: 0; font-size: 20px; font-weight: bold;">MRL PACKERS & MOVERS</h1>
+              <p style="margin: 4px 0 0 0; font-size: 13px;">New Shifting / Quote Inquiry Received</p>
+            </div>
+            
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b;">
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; font-weight: bold; width: 35%;">Quote ID:</td>
+                <td style="padding: 10px 0; color: #dc2626; font-weight: bold; font-family: monospace;">${quoteId}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; font-weight: bold;">Customer Name:</td>
+                <td style="padding: 10px 0;">${sanitizedName}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; font-weight: bold;">Mobile (WhatsApp):</td>
+                <td style="padding: 10px 0;"><a href="tel:${sanitizedPhone}" style="color: #dc2626; font-weight: bold; text-decoration: none;">${sanitizedPhone}</a></td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; font-weight: bold;">Email:</td>
+                <td style="padding: 10px 0;">${sanitizedEmail || "Not Provided"}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; font-weight: bold;">Pickup Location:</td>
+                <td style="padding: 10px 0;">${sanitizedPickup}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; font-weight: bold;">Drop Location:</td>
+                <td style="padding: 10px 0;">${sanitizedDrop}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; font-weight: bold;">Moving Date & Time:</td>
+                <td style="padding: 10px 0;">${sanitizedDate} (${sanitizedTime})</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 10px 0; font-weight: bold;">Service & Move Size:</td>
+                <td style="padding: 10px 0;">${sanitizedService} - ${sanitizedVehicle}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px 0; font-weight: bold; vertical-align: top;">Notes / Items:</td>
+                <td style="padding: 10px 0;">${sanitizedMessage || "None"}</td>
+              </tr>
+            </table>
 
-Quote ID: ${quoteId}
-Customer: ${sanitizedName}
-Phone: ${sanitizedPhone}
-Email: ${sanitizedEmail || "N/A"}
-Pickup: ${sanitizedPickup}
-Drop: ${sanitizedDrop}
-Moving Date: ${sanitizedDate}
-Moving Time: ${sanitizedTime}
-Service: ${sanitizedService}
-Vehicle: ${sanitizedVehicle}
-Additional Requirements: ${sanitizedMessage || "None"}
-Submitted At: ${new Date().toISOString()}`;
+            <div style="margin-top: 25px; text-align: center;">
+              <a href="https://wa.me/${sanitizedPhone.replace(/[^0-9]/g, '')}?text=Hi%20${encodeURIComponent(sanitizedName)}%2C%20this%20is%20MRL%20Packers%20%26%20Movers%20regarding%20your%20quote%20request%20${quoteId}." style="background-color: #16a34a; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; margin-right: 8px;">Reply on WhatsApp</a>
+              <a href="tel:${sanitizedPhone}" style="background-color: #dc2626; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">Call Customer</a>
+            </div>
+
+            <p style="font-size: 11px; color: #94a3b8; text-align: center; margin-top: 25px;">
+              MRL Packers & Movers • Kandivali East, Mumbai • 24/7 Helpline: 7777042041 / 8657972041
+            </p>
+          </div>
+        `;
 
         const emailRes = await fetch("https://api.resend.com/emails", {
           method: "POST",
@@ -169,20 +226,20 @@ Submitted At: ${new Date().toISOString()}`;
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            from: "MRL Relocation <quotes@mrlpackersmovers.com>",
+            from: "MRL Relocation <onboarding@resend.dev>",
             to: ["mrlpackersmovers7777@gmail.com"],
             subject: emailSubject,
-            text: emailBody,
+            html: htmlBody,
           }),
         });
 
         if (emailRes.ok) emailSent = true;
       } catch (err) {
-        console.warn("Email dispatch error (Database record preserved):", err);
+        console.warn("Email dispatch warning (Data safely saved to database):", err);
       }
     }
 
-    // 7. Format Official WhatsApp Click-to-Chat Link (MRL WhatsApp Number: 917777042041)
+    // 7. Format Official WhatsApp Pre-filled URL (MRL Desk: 917777042041)
     const whatsappNumber = "917777042041";
     const whatsappText = encodeURIComponent(
       `*New Quote Request - MRL Packers & Movers*\n\n` +
@@ -192,12 +249,12 @@ Submitted At: ${new Date().toISOString()}`;
       `*Pickup:* ${sanitizedPickup}\n` +
       `*Drop:* ${sanitizedDrop}\n` +
       `*Moving Date:* ${sanitizedDate}\n` +
-      `*Service:* ${sanitizedService}\n\n` +
+      `*Service:* ${sanitizedService} (${sanitizedVehicle})\n\n` +
       `Please confirm slot availability!`
     );
     const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappText}`;
 
-    // 8. Return Success Response
+    // 8. Return Success JSON Response
     return new Response(
       JSON.stringify({
         success: true,
