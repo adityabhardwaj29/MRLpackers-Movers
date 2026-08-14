@@ -13,9 +13,11 @@ import {
 import { COMPANY_INFO, GALLERY_IMAGES } from '../data';
 import { GalleryItem } from '../types';
 
+import { PageType } from '../components/Navbar';
+
 interface GalleryPageProps {
   onOpenQuoteModal: () => void;
-  onNavigatePage: (page: 'home' | 'services' | 'gallery' | 'about' | 'privacy' | 'terms') => void;
+  onNavigatePage: (page: PageType) => void;
 }
 
 export const GalleryPage: React.FC<GalleryPageProps> = ({

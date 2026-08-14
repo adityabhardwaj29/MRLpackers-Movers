@@ -21,11 +21,11 @@ import {
   FileCheck
 } from 'lucide-react';
 import { COMPANY_INFO, SERVICES } from '../data';
-import { MRLLogo } from '../components/MRLLogo';
+import { PageType } from '../components/Navbar';
 
 interface AboutPageProps {
   onOpenQuoteModal: () => void;
-  onNavigatePage: (page: 'home' | 'services' | 'gallery' | 'about' | 'privacy' | 'terms') => void;
+  onNavigatePage: (page: PageType) => void;
 }
 
 export const AboutPage: React.FC<AboutPageProps> = ({ onOpenQuoteModal, onNavigatePage }) => {

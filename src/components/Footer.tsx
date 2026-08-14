@@ -89,6 +89,15 @@ export const Footer: React.FC<FooterProps> = ({
               </li>
               <li>
                 <button
+                  onClick={() => handleNav('about')}
+                  className="hover:text-red-400 transition-colors flex items-center gap-1.5 text-left cursor-pointer"
+                >
+                  <span className="text-red-500">›</span>
+                  <span>About Us</span>
+                </button>
+              </li>
+              <li>
+                <button
                   onClick={() => handleNav('services')}
                   className="hover:text-red-400 transition-colors flex items-center gap-1.5 text-left cursor-pointer"
                 >
@@ -107,11 +116,20 @@ export const Footer: React.FC<FooterProps> = ({
               </li>
               <li>
                 <button
-                  onClick={() => handleNav('about')}
+                  onClick={() => handleNav('contact')}
                   className="hover:text-red-400 transition-colors flex items-center gap-1.5 text-left cursor-pointer"
                 >
                   <span className="text-red-500">›</span>
-                  <span>About Us</span>
+                  <span>Contact Us</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => handleNav('quote')}
+                  className="hover:text-red-400 transition-colors flex items-center gap-1.5 text-left cursor-pointer font-bold text-red-400"
+                >
+                  <span className="text-red-500">›</span>
+                  <span>Get Free Quote</span>
                 </button>
               </li>
               <li className="pt-2 border-t border-slate-900">

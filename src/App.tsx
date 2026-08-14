@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navbar, PageType } from './components/Navbar';
 import { HomePage } from './pages/HomePage';
 import { ServicesPage } from './pages/ServicesPage';
 import { GalleryPage } from './pages/GalleryPage';
 import { AboutPage } from './pages/AboutPage';
+import { ContactPage } from './pages/ContactPage';
+import { QuotePage } from './pages/QuotePage';
 import { PrivacyPolicyView } from './components/PrivacyPolicyView';
 import { TermsConditionsView } from './components/TermsConditionsView';
 import { Footer } from './components/Footer';
-
 import { FloatingBottomBar } from './components/FloatingBottomBar';
-
 import { ServiceItem, PricingPlan, QuoteFormData } from './types';
 import { CheckCircle2, X } from 'lucide-react';
 
@@ -19,6 +19,38 @@ export default function App() {
 
   // Success Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Dynamic SEO Title management per page
+  useEffect(() => {
+    switch (currentPage) {
+      case 'home':
+        document.title = 'MRL Packers & Movers Mumbai | Trusted Relocation Services';
+        break;
+      case 'about':
+        document.title = 'About MRL Packers & Movers | Mumbai';
+        break;
+      case 'services':
+        document.title = 'Packers & Movers Services in Mumbai | MRL';
+        break;
+      case 'gallery':
+        document.title = 'MRL Packers & Movers Gallery | Mumbai';
+        break;
+      case 'contact':
+        document.title = 'Contact MRL Packers & Movers | Mumbai';
+        break;
+      case 'quote':
+        document.title = 'Get Free Relocation Quote | MRL Packers & Movers Mumbai';
+        break;
+      case 'privacy':
+        document.title = 'Privacy Policy | MRL Packers & Movers';
+        break;
+      case 'terms':
+        document.title = 'Terms & Conditions | MRL Packers & Movers';
+        break;
+      default:
+        document.title = 'MRL Packers & Movers Mumbai';
+    }
+  }, [currentPage]);
 
   const handleQuoteFormSubmit = (data: QuoteFormData) => {
     setToastMessage(`✅ Quote Request Received for ${data.name || 'Customer'}! Our team will call you within 15 minutes.`);
@@ -31,54 +63,18 @@ export default function App() {
   };
 
   const handleSelectService = (service: ServiceItem) => {
-    if (currentPage !== 'home') {
-      setCurrentPage('home');
-      setTimeout(() => {
-        const contactSection = document.getElementById('contact');
-        if (contactSection) {
-          contactSection.scrollIntoView({ behavior: 'smooth' });
-        }
-      }, 100);
-    } else {
-      const contactSection = document.getElementById('contact');
-      if (contactSection) {
-        contactSection.scrollIntoView({ behavior: 'smooth' });
-      }
-    }
+    setCurrentPage('quote');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSelectPlan = (plan: PricingPlan) => {
-    if (currentPage !== 'home') {
-      setCurrentPage('home');
-      setTimeout(() => {
-        const contactSection = document.getElementById('contact');
-        if (contactSection) {
-          contactSection.scrollIntoView({ behavior: 'smooth' });
-        }
-      }, 100);
-    } else {
-      const contactSection = document.getElementById('contact');
-      if (contactSection) {
-        contactSection.scrollIntoView({ behavior: 'smooth' });
-      }
-    }
+    setCurrentPage('quote');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleScrollToContact = () => {
-    if (currentPage !== 'home') {
-      setCurrentPage('home');
-      setTimeout(() => {
-        const contactSection = document.getElementById('contact');
-        if (contactSection) {
-          contactSection.scrollIntoView({ behavior: 'smooth' });
-        }
-      }, 100);
-    } else {
-      const contactSection = document.getElementById('contact');
-      if (contactSection) {
-        contactSection.scrollIntoView({ behavior: 'smooth' });
-      }
-    }
+    setCurrentPage('quote');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
@@ -115,6 +111,13 @@ export default function App() {
           />
         )}
 
+        {currentPage === 'about' && (
+          <AboutPage
+            onOpenQuoteModal={handleScrollToContact}
+            onNavigatePage={handleNavigatePage}
+          />
+        )}
+
         {currentPage === 'services' && (
           <ServicesPage
             onSelectService={handleSelectService}
@@ -130,9 +133,16 @@ export default function App() {
           />
         )}
 
-        {currentPage === 'about' && (
-          <AboutPage
-            onOpenQuoteModal={handleScrollToContact}
+        {currentPage === 'contact' && (
+          <ContactPage
+            onNavigatePage={handleNavigatePage}
+            onSubmitQuoteForm={handleQuoteFormSubmit}
+          />
+        )}
+
+        {currentPage === 'quote' && (
+          <QuotePage
+            onSubmitQuoteForm={handleQuoteFormSubmit}
             onNavigatePage={handleNavigatePage}
           />
         )}

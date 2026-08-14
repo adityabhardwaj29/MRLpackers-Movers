@@ -18,10 +18,12 @@ import {
 import { COMPANY_INFO, SERVICES } from '../data';
 import { ServiceItem } from '../types';
 
+import { PageType } from '../components/Navbar';
+
 interface ServicesPageProps {
   onSelectService: (service: ServiceItem) => void;
   onOpenQuoteModal: () => void;
-  onNavigatePage: (page: 'home' | 'services' | 'gallery' | 'about' | 'privacy' | 'terms') => void;
+  onNavigatePage: (page: PageType) => void;
 }
 
 export const ServicesPage: React.FC<ServicesPageProps> = ({

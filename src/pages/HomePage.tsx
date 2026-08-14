@@ -12,12 +12,14 @@ import { ServiceItem, PricingPlan, QuoteFormData } from '../types';
 import { ArrowRight, Sparkles, Building, Phone } from 'lucide-react';
 import { COMPANY_INFO } from '../data';
 
+import { PageType } from '../components/Navbar';
+
 interface HomePageProps {
   onOpenQuoteModal: () => void;
   onSubmitQuoteForm: (data: QuoteFormData) => void;
   onSelectService: (service: ServiceItem) => void;
   onSelectPlan: (plan: PricingPlan) => void;
-  onNavigatePage: (page: 'home' | 'services' | 'gallery' | 'about' | 'privacy' | 'terms') => void;
+  onNavigatePage: (page: PageType) => void;
 }
 
 export const HomePage: React.FC<HomePageProps> = ({

@@ -3,7 +3,7 @@ import { Phone, MessageSquare, Menu, X, ShieldCheck, ChevronDown, FileText, Scal
 import { COMPANY_INFO } from '../data';
 import { MRLLogo } from './MRLLogo';
 
-export type PageType = 'home' | 'services' | 'gallery' | 'about' | 'privacy' | 'terms';
+export type PageType = 'home' | 'services' | 'gallery' | 'about' | 'contact' | 'quote' | 'privacy' | 'terms';
 
 interface NavbarProps {
   onOpenQuoteModal: () => void;
@@ -39,9 +39,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const navItems: { id: PageType; label: string; icon?: React.ReactNode }[] = [
     { id: 'home', label: 'Home' },
+    { id: 'about', label: 'About' },
     { id: 'services', label: 'Services' },
     { id: 'gallery', label: 'Gallery' },
-    { id: 'about', label: 'About' },
+    { id: 'contact', label: 'Contact' },
   ];
 
   return (
@@ -177,7 +178,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </a>
 
             <button
-              onClick={onOpenQuoteModal}
+              onClick={() => handleNavClick('quote')}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs shadow-md shadow-red-600/25 transition-all transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
             >
               <span>Get Free Quote</span>
@@ -277,10 +278,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Action buttons inside drawer */}
             <div className="pt-3 flex flex-col gap-2">
               <button
-                onClick={() => {
-                  setIsMobileMenuOpen(false);
-                  onOpenQuoteModal();
-                }}
+                onClick={() => handleNavClick('quote')}
                 className="w-full py-3.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-red-600/30 flex items-center justify-center gap-2 cursor-pointer"
               >
                 <MessageSquare className="w-4 h-4 fill-white" />
