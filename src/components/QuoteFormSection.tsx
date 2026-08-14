@@ -132,7 +132,7 @@ export const QuoteFormSection: React.FC<QuoteFormSectionProps> = ({ onSubmitQuot
                 <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
                   <span>Relocation Details</span>
                   <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full border border-emerald-200 font-extrabold uppercase">
-                    10% OFF Promo Applied
+                    UDYAM Certified
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5 font-medium">Safe &amp; encrypted booking powered by Supabase Backend.</p>
