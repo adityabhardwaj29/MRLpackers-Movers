@@ -1,6 +1,8 @@
 // @ts-nocheck
 // Allowed production and development origins
 const allowedOrigins = [
+  "https://www.mrlpackersandmovers.com",
+  "https://mrlpackersandmovers.com",
   "https://mrl-packers-movers.vercel.app",
   "https://mrlpackersmovers.com",
   "https://www.mrlpackersmovers.com",
