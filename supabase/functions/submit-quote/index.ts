@@ -1,6 +1,4 @@
 // @ts-nocheck
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-
 // Allowed production and development origins
 const allowedOrigins = [
   "https://mrl-packers-movers.vercel.app",
@@ -53,7 +51,7 @@ Deno.serve(async (req: Request) => {
   try {
     const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown";
 
-    // 1. Rate Limiting Check (Max 20 requests per 10 minutes per IP)
+    // 1. Rate Limiting Check (Max 30 requests per 10 minutes per IP)
     const now = Date.now();
     const windowMs = 10 * 60 * 1000;
     const ipData = rateLimitMap.get(clientIp) || { count: 0, lastReset: now };
@@ -66,9 +64,9 @@ Deno.serve(async (req: Request) => {
     }
     rateLimitMap.set(clientIp, ipData);
 
-    if (ipData.count > 20) {
+    if (ipData.count > 30) {
       return new Response(
-        JSON.stringify({ error: "Too many quote requests. Please try again in 10 minutes." }),
+        JSON.stringify({ error: "Too many requests. Please try again later." }),
         { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -81,18 +79,18 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 2. Detect if payload is from Supabase Database Webhook or Direct Client Invocation
-    const isWebhook = Boolean(body.record && (body.type === "INSERT" || body.table));
+    // 2. Extract record from Database Webhook (`body.record`) or Direct payload (`body`)
+    const isWebhook = Boolean(body.record);
     const record = isWebhook ? body.record : body;
 
-    console.log(`Processing quote request. Mode: ${isWebhook ? 'DATABASE_WEBHOOK' : 'DIRECT_INVOCATION'}`);
+    console.log(`[submit-quote] Processing notification. Trigger: ${isWebhook ? 'SUPABASE_DATABASE_WEBHOOK' : 'DIRECT_INVOCATION'}`);
 
-    // 3. Extract & Sanitize fields from Webhook record or Direct payload
-    const rawName = record.full_name || record.customer_name || record.name || record.fullName || "";
+    // 3. Extract & Sanitize fields
+    const rawName = record.full_name || record.customer_name || record.name || record.fullName || "Customer";
     const rawPhone = record.phone || record.mobile_number || record.mobile || record.phoneNumber || "";
     const rawEmail = record.email || "";
-    const rawPickup = record.pickup_location || record.pickup_address || record.pickupLocation || record.pickup || "";
-    const rawDrop = record.drop_location || record.drop_address || record.dropLocation || record.drop || "";
+    const rawPickup = record.pickup_location || record.pickup_address || record.pickupLocation || record.pickup || "Not Provided";
+    const rawDrop = record.drop_location || record.drop_address || record.dropLocation || record.drop || "Not Provided";
     const rawDate = record.moving_date || record.date || record.movingDate || new Date().toISOString().split("T")[0];
     const rawTime = record.moving_time || record.time || record.movingTime || "Morning (8 AM - 12 PM)";
     const rawService = record.service_type || record.service || record.serviceType || "Household Shifting";
@@ -112,91 +110,14 @@ Deno.serve(async (req: Request) => {
     const sanitizedVehicle = String(rawVehicle).slice(0, 50);
     const sanitizedMessage = String(rawMessage).trim().slice(0, 500);
 
-    // Validation (for direct client requests)
-    if (!isWebhook) {
-      if (!sanitizedName || sanitizedName.length < 2) {
-        return new Response(JSON.stringify({ error: "Full name is required (at least 2 characters)." }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      if (!sanitizedPhone || sanitizedPhone.length < 10) {
-        return new Response(JSON.stringify({ error: "Valid 10-digit mobile number is required." }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      if (sanitizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sanitizedEmail)) {
-        return new Response(JSON.stringify({ error: "Invalid email address format." }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      if (!sanitizedPickup || !sanitizedDrop) {
-        return new Response(JSON.stringify({ error: "Both pickup and drop locations are required." }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    }
-
-    // 4. Generate or use existing Quote ID
     const currentYear = new Date().getFullYear();
     const randomCode = Math.floor(100000 + Math.random() * 900000);
     const quoteId = incomingQuoteId || `MRL-${currentYear}-${randomCode}`;
 
-    // 5. If Direct Invocation (NOT a webhook), insert into database
-    if (!isWebhook) {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-      const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_ANON_KEY") || "";
+    // NOTE: Edge Function is STRICTLY READ-ONLY for database.
+    // It NEVER inserts into quote_requests or bookings to prevent recursive trigger loops.
 
-      if (supabaseUrl && supabaseServiceKey) {
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
-        const dbPayload = {
-          quote_id: quoteId,
-          full_name: sanitizedName,
-          phone: sanitizedPhone,
-          email: sanitizedEmail || null,
-          pickup_location: sanitizedPickup,
-          drop_location: sanitizedDrop,
-          moving_date: sanitizedDate,
-          moving_time: sanitizedTime,
-          service_type: sanitizedService,
-          vehicle_type: sanitizedVehicle,
-          message: sanitizedMessage || null,
-          status: "pending",
-        };
-
-        const { error: dbError } = await supabase.from("quote_requests").insert([dbPayload]);
-        if (dbError) {
-          console.warn("Direct insert to quote_requests warning:", dbError.message);
-          // Fallback to bookings table
-          try {
-            await supabase.from("bookings").insert([{
-              booking_ref: quoteId,
-              customer_name: sanitizedName,
-              mobile_number: sanitizedPhone,
-              email: sanitizedEmail || null,
-              pickup_address: sanitizedPickup,
-              drop_address: sanitizedDrop,
-              date: sanitizedDate,
-              time: sanitizedTime,
-              service_type: sanitizedService,
-              vehicle_type: sanitizedVehicle,
-              notes: sanitizedMessage || null,
-              status: "pending",
-            }]);
-          } catch (fbErr) {
-            console.error("Bookings fallback error:", fbErr);
-          }
-        }
-      }
-    }
-
-    // 6. Send HTML Escaped Email via Resend API
+    // 4. Send HTML Escaped Email via Resend API
     let emailSent = false;
     let emailMessageId = "";
     const rawResendKey = Deno.env.get("RESEND_API_KEY");
@@ -276,7 +197,7 @@ Deno.serve(async (req: Request) => {
           </div>
         `;
 
-        console.log(`Dispatching Resend email from "${fromEmail}" to "${recipientEmail}" for Quote: ${quoteId}`);
+        console.log(`[submit-quote] Dispatching Resend email from "${fromEmail}" to "${recipientEmail}" for Quote: ${quoteId}`);
 
         const emailRes = await fetch("https://api.resend.com/emails", {
           method: "POST",
@@ -296,19 +217,19 @@ Deno.serve(async (req: Request) => {
           const resJson = await emailRes.json().catch(() => ({}));
           emailSent = true;
           emailMessageId = resJson.id || "sent";
-          console.log(`✓ Resend email successfully delivered! ID: ${emailMessageId}`);
+          console.log(`[submit-quote] ✓ Resend email successfully delivered! ID: ${emailMessageId}`);
         } else {
           const errText = await emailRes.text().catch(() => "");
-          console.error(`✗ Resend API returned error status ${emailRes.status}:`, errText);
+          console.error(`[submit-quote] ✗ Resend API returned error status ${emailRes.status}:`, errText);
         }
       } catch (err) {
-        console.error("✗ Exception during Resend email dispatch:", err);
+        console.error("[submit-quote] ✗ Exception during Resend email dispatch:", err);
       }
     } else {
-      console.warn("⚠️ RESEND_API_KEY secret is not set in Supabase Edge Function Secrets.");
+      console.warn("[submit-quote] ⚠️ RESEND_API_KEY secret is not set in Supabase Edge Function Secrets.");
     }
 
-    // 7. Format Official WhatsApp Link (+91 77770 42041)
+    // 5. Format Official WhatsApp Link (+91 77770 42041)
     const whatsappNumber = "917777042041";
     const whatsappText = encodeURIComponent(
       `*New Quote Request - MRL Packers & Movers*\n\n` +
@@ -327,7 +248,7 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({
         success: true,
         quote_id: quoteId,
-        message: "Your quote request has been submitted successfully.",
+        message: "Your quote request has been processed.",
         email_sent: emailSent,
         email_id: emailMessageId || null,
         whatsapp_url: whatsappUrl,
@@ -336,7 +257,7 @@ Deno.serve(async (req: Request) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: any) {
-    console.error("Edge Function unhandled error:", error);
+    console.error("[submit-quote] Edge Function unhandled error:", error);
     return new Response(
       JSON.stringify({ error: "Unable to process quote request. Please call our 24/7 helpline." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

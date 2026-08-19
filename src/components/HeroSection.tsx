@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Phone, MessageSquare, ShieldCheck, Star, CheckCircle2, MapPin, Sparkles } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Phone, MessageSquare, ShieldCheck, Star, CheckCircle2, MapPin, Sparkles, Loader2 } from 'lucide-react';
 import { COMPANY_INFO } from '../data';
 import { QuoteFormData } from '../types';
 import { MRLLogo } from './MRLLogo';
@@ -28,6 +28,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [submittedQuoteResult, setSubmittedQuoteResult] = useState<{
     quoteId: string;
     whatsappUrl?: string;
@@ -39,6 +40,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingRef.current || isSubmitting) return;
+
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
       const result = await createBooking(formData);
@@ -55,6 +59,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
       console.error('Hero quote submit error:', err);
       alert('Unable to submit your quote request. Please call our helpline at +91 77770 42041.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -259,9 +264,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full bg-red-600 text-white font-extrabold text-xs uppercase tracking-wider py-3 rounded-xl hover:bg-red-700 shadow-md shadow-red-600/20 transition-all mt-1 flex items-center justify-center gap-2"
+                    className="w-full bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none text-white font-extrabold text-xs uppercase tracking-wider py-3 rounded-xl hover:bg-red-700 shadow-md shadow-red-600/20 transition-all mt-1 flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <Sparkles className="w-4 h-4" />
+                    {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                     <span>{isSubmitting ? 'Submitting Details...' : 'Get Instant Shifting Quote'}</span>
                   </button>
                 </form>

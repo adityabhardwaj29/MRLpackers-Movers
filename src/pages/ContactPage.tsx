@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Phone, Mail, MapPin, MessageSquare, Clock, ShieldCheck, CheckCircle2, Send, Sparkles } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Phone, Mail, MapPin, MessageSquare, Clock, ShieldCheck, CheckCircle2, Send, Sparkles, Loader2 } from 'lucide-react';
 import { COMPANY_INFO } from '../data';
 import { QuoteFormData } from '../types';
 import { createBooking } from '../lib/supabase';
@@ -23,10 +23,14 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onNavigatePage, onSubm
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [submittedResult, setSubmittedResult] = useState<{ quoteId: string; whatsappUrl?: string } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingRef.current || isSubmitting) return;
+
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
       const res = await createBooking(formData);
@@ -43,6 +47,7 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onNavigatePage, onSubm
       console.error('Contact form submit error:', err);
       alert('Unable to submit your contact inquiry. Please call our helpline at +91 77770 42041.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -334,9 +339,9 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onNavigatePage, onSubm
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full py-4 px-6 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-4 px-6 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Send className="w-4 h-4" />
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   <span>{isSubmitting ? 'Submitting Inquiry...' : 'Submit Contact Inquiry'}</span>
                 </button>
               </form>

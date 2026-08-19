@@ -33,11 +33,25 @@ export function generateQuoteId(): string {
   return `MRL-${currentYear}-${randomNum}`;
 }
 
+// In-flight & recent submission deduplication cache (blocks duplicates within 4 seconds)
+let lastSubmissionHash = '';
+let lastSubmissionTime = 0;
+let lastSubmissionResult: QuoteRequestResult | null = null;
+
 /**
  * 1. CREATE QUOTE REQUEST: Saves customer quote directly into Supabase PostgreSQL table `quote_requests`.
- * When inserted, the configured Supabase Database Webhook automatically triggers the `submit-quote` Edge Function.
+ * When inserted, the configured Supabase Database Webhook automatically triggers the `submit-quote` Edge Function (READ-ONLY).
  */
 export async function createBooking(data: QuoteFormData, userId?: string, estimatedPrice?: number): Promise<QuoteRequestResult> {
+  const currentHash = `${data.phone.trim()}_${data.pickupLocation.trim()}_${data.dropLocation.trim()}_${data.movingDate}`;
+  const now = Date.now();
+
+  // Deduplication check: if identical data was submitted < 4000ms ago and succeeded, return previous result
+  if (lastSubmissionResult && lastSubmissionResult.success && lastSubmissionHash === currentHash && (now - lastSubmissionTime < 4000)) {
+    console.log('[createBooking] Deduplication: duplicate submission blocked, returning cached result.');
+    return lastSubmissionResult;
+  }
+
   const generatedId = generateQuoteId();
 
   const dbPayload = {
@@ -58,7 +72,7 @@ export async function createBooking(data: QuoteFormData, userId?: string, estima
   let isSaved = false;
   let saveErrorMessage = '';
 
-  // Step 1: Direct Supabase PostgreSQL Insert into `quote_requests`
+  // Exactly ONE direct insert into `quote_requests`
   try {
     const { error: dbError } = await supabase
       .from('quote_requests')
@@ -67,7 +81,7 @@ export async function createBooking(data: QuoteFormData, userId?: string, estima
     if (!dbError) {
       isSaved = true;
     } else {
-      console.warn('Supabase DB Insert Warning (quote_requests):', dbError.message);
+      console.warn('[createBooking] Supabase DB Insert Warning (quote_requests):', dbError.message);
       saveErrorMessage = dbError.message;
 
       // Fallback insert to `bookings` table if schema is named bookings
@@ -90,27 +104,12 @@ export async function createBooking(data: QuoteFormData, userId?: string, estima
           isSaved = true;
         }
       } catch (err2) {
-        console.warn('Bookings fallback insert error:', err2);
+        console.warn('[createBooking] Bookings fallback insert error:', err2);
       }
     }
   } catch (err: any) {
-    console.error('Supabase Connection Error:', err?.message || err);
+    console.error('[createBooking] Supabase Connection Error:', err?.message || err);
     saveErrorMessage = err?.message || 'Database connection error';
-  }
-
-  // Step 2: If direct database insert failed, fallback to Edge Function invocation
-  if (!isSaved) {
-    try {
-      const { data: edgeData, error: edgeError } = await supabase.functions.invoke('submit-quote', {
-        body: dbPayload,
-      });
-
-      if (!edgeError && edgeData && edgeData.success) {
-        isSaved = true;
-      }
-    } catch (edgeErr) {
-      console.warn('Edge Function fallback error:', edgeErr);
-    }
   }
 
   const whatsappNumber = COMPANY_INFO.whatsappNumber;
@@ -128,13 +127,17 @@ export async function createBooking(data: QuoteFormData, userId?: string, estima
   const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappText}`;
 
   if (isSaved) {
-    return {
+    const result: QuoteRequestResult = {
       success: true,
       quoteId: generatedId,
       message: 'Your quote request has been submitted successfully.',
       savedToSupabase: true,
       whatsappUrl,
     };
+    lastSubmissionHash = currentHash;
+    lastSubmissionTime = Date.now();
+    lastSubmissionResult = result;
+    return result;
   } else {
     return {
       success: false,

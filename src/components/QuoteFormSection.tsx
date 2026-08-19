@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Phone, MessageSquare, MapPin, Mail, Clock, Send, CheckCircle2, ChevronDown, ChevronUp, AlertCircle, ShieldCheck } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Phone, MessageSquare, MapPin, Mail, Clock, Send, CheckCircle2, ChevronDown, ChevronUp, AlertCircle, ShieldCheck, Loader2 } from 'lucide-react';
 import { COMPANY_INFO, FAQS } from '../data';
 import { QuoteFormData } from '../types';
 import { createBooking } from '../lib/supabase';
@@ -25,6 +25,7 @@ export const QuoteFormSection: React.FC<QuoteFormSectionProps> = ({ onSubmitQuot
 
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [submittedResult, setSubmittedResult] = useState<{
     success: boolean;
@@ -40,11 +41,11 @@ export const QuoteFormSection: React.FC<QuoteFormSectionProps> = ({ onSubmitQuot
 
   const validateForm = (): boolean => {
     if (!formData.name.trim() || formData.name.trim().length < 2) {
-      setValidationError('Please enter your full name (at least 2 characters).');
+      setValidationError('Please enter your full name (minimum 2 characters).');
       return false;
     }
 
-    const cleanPhone = formData.phone.replace(/[\s\-\+\(\)]/g, '');
+    const cleanPhone = formData.phone.replace(/[^\d]/g, '');
     if (!cleanPhone || cleanPhone.length < 10) {
       setValidationError('Please enter a valid 10-digit mobile number.');
       return false;
@@ -73,10 +74,13 @@ export const QuoteFormSection: React.FC<QuoteFormSectionProps> = ({ onSubmitQuot
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingRef.current || isSubmitting) return;
+
     setValidationError(null);
 
     if (!validateForm()) return;
 
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -96,6 +100,7 @@ export const QuoteFormSection: React.FC<QuoteFormSectionProps> = ({ onSubmitQuot
       console.error('Quote form submit error:', err);
       setValidationError('Unable to submit your quote request at this moment. Please call our 24/7 helpline at +91 77770 42041.');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -366,10 +371,10 @@ export const QuoteFormSection: React.FC<QuoteFormSectionProps> = ({ onSubmitQuot
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="py-4 px-6 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-red-600/25 transition-all flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-95 cursor-pointer"
+                    className="py-4 px-6 rounded-2xl bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none text-white font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-red-600/25 transition-all flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-95 cursor-pointer"
                   >
-                    <Send className="w-4 h-4" />
-                    <span>{isSubmitting ? 'Saving to Database...' : 'Submit & Save Booking'}</span>
+                    {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    <span>{isSubmitting ? 'Submitting...' : 'Submit & Save Booking'}</span>
                   </button>
 
                   <button
