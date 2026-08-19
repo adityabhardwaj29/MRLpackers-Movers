@@ -80,22 +80,21 @@ export const QuoteFormSection: React.FC<QuoteFormSectionProps> = ({ onSubmitQuot
     setIsSubmitting(true);
 
     try {
-      // Save directly to Supabase with Edge Function invocation & database persistence
       const result = await createBooking(formData);
-      setSubmittedResult({
-        success: result.success,
-        bookingRef: result.quoteId || 'MRL-2026-10001',
-        message: result.message,
-        whatsappUrl: result.whatsappUrl,
-      });
-
-      onSubmitQuoteForm(formData);
+      if (result.success) {
+        setSubmittedResult({
+          success: true,
+          bookingRef: result.quoteId || 'MRL-2026-10001',
+          message: result.message,
+          whatsappUrl: result.whatsappUrl,
+        });
+        onSubmitQuoteForm(formData);
+      } else {
+        setValidationError(result.message || 'Unable to save your booking to database. Please call our 24/7 helpline.');
+      }
     } catch (err: any) {
-      setSubmittedResult({
-        success: true,
-        bookingRef: `MRL-2026-${Math.floor(100000 + Math.random() * 900000)}`,
-        message: 'Your quote request has been submitted successfully.',
-      });
+      console.error('Quote form submit error:', err);
+      setValidationError('Unable to submit your quote request at this moment. Please call our 24/7 helpline at +91 77770 42041.');
     } finally {
       setIsSubmitting(false);
     }

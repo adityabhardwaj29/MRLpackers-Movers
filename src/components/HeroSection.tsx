@@ -42,13 +42,18 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
     setIsSubmitting(true);
     try {
       const result = await createBooking(formData);
-      setSubmittedQuoteResult({
-        quoteId: result.quoteId || 'MRL-2026-10001',
-        whatsappUrl: result.whatsappUrl,
-      });
-      onSubmitQuoteForm(formData);
+      if (result.success) {
+        setSubmittedQuoteResult({
+          quoteId: result.quoteId || 'MRL-2026-10001',
+          whatsappUrl: result.whatsappUrl,
+        });
+        onSubmitQuoteForm(formData);
+      } else {
+        alert(result.message || 'Unable to submit your quote request. Please call +91 77770 42041.');
+      }
     } catch (err) {
-      console.warn('Booking save:', err);
+      console.error('Hero quote submit error:', err);
+      alert('Unable to submit your quote request. Please call our helpline at +91 77770 42041.');
     } finally {
       setIsSubmitting(false);
     }

@@ -30,13 +30,18 @@ export const ContactPage: React.FC<ContactPageProps> = ({ onNavigatePage, onSubm
     setIsSubmitting(true);
     try {
       const res = await createBooking(formData);
-      setSubmittedResult({
-        quoteId: res.quoteId || 'MRL-2026-10001',
-        whatsappUrl: res.whatsappUrl,
-      });
-      if (onSubmitQuoteForm) onSubmitQuoteForm(formData);
+      if (res.success) {
+        setSubmittedResult({
+          quoteId: res.quoteId || 'MRL-2026-10001',
+          whatsappUrl: res.whatsappUrl,
+        });
+        if (onSubmitQuoteForm) onSubmitQuoteForm(formData);
+      } else {
+        alert(res.message || 'Unable to submit your contact inquiry. Please call +91 77770 42041.');
+      }
     } catch (err) {
-      console.warn('Contact form submit error:', err);
+      console.error('Contact form submit error:', err);
+      alert('Unable to submit your contact inquiry. Please call our helpline at +91 77770 42041.');
     } finally {
       setIsSubmitting(false);
     }

@@ -34,13 +34,14 @@ export function generateQuoteId(): string {
 }
 
 /**
- * 1. CREATE QUOTE REQUEST: Saves customer quote directly into Supabase `quote_requests` table
- * Uses Edge Function `submit-quote` with fallback to direct Supabase RLS Insert.
+ * 1. CREATE QUOTE REQUEST: Saves customer quote directly into Supabase PostgreSQL table `quote_requests`.
+ * When inserted, the configured Supabase Database Webhook automatically triggers the `submit-quote` Edge Function.
  */
 export async function createBooking(data: QuoteFormData, userId?: string, estimatedPrice?: number): Promise<QuoteRequestResult> {
   const generatedId = generateQuoteId();
 
-  const payload = {
+  const dbPayload = {
+    quote_id: generatedId,
     full_name: data.name.trim(),
     phone: data.phone.trim(),
     email: data.email?.trim() || null,
@@ -51,46 +52,14 @@ export async function createBooking(data: QuoteFormData, userId?: string, estima
     service_type: data.serviceType || 'Household Shifting',
     vehicle_type: data.moveSize || '2BHK',
     message: data.additionalNotes?.trim() || null,
+    status: 'pending' as BookingStatus,
   };
 
   let isSaved = false;
+  let saveErrorMessage = '';
 
-  // Try Supabase Edge Function first for server-side validation & rate limiting
+  // Step 1: Direct Supabase PostgreSQL Insert into `quote_requests`
   try {
-    const { data: edgeData, error: edgeError } = await supabase.functions.invoke('submit-quote', {
-      body: payload,
-    });
-
-    if (!edgeError && edgeData && edgeData.success) {
-      return {
-        success: true,
-        quoteId: edgeData.quote_id || generatedId,
-        message: edgeData.message || 'Your quote request has been submitted successfully.',
-        savedToSupabase: true,
-        whatsappUrl: edgeData.whatsapp_url,
-      };
-    }
-  } catch (edgeErr) {
-    console.log('Edge Function invoke fallback to direct Supabase client insert');
-  }
-
-  // Fallback to direct client-side insertion into `quote_requests` table
-  try {
-    const dbPayload = {
-      quote_id: generatedId,
-      full_name: payload.full_name,
-      phone: payload.phone,
-      email: payload.email,
-      pickup_location: payload.pickup_location,
-      drop_location: payload.drop_location,
-      moving_date: payload.moving_date,
-      moving_time: payload.moving_time,
-      service_type: payload.service_type,
-      vehicle_type: payload.vehicle_type,
-      message: payload.message,
-      status: 'pending' as BookingStatus,
-    };
-
     const { error: dbError } = await supabase
       .from('quote_requests')
       .insert([dbPayload]);
@@ -99,52 +68,83 @@ export async function createBooking(data: QuoteFormData, userId?: string, estima
       isSaved = true;
     } else {
       console.warn('Supabase DB Insert Warning (quote_requests):', dbError.message);
+      saveErrorMessage = dbError.message;
 
-      // Secondary fallback to `bookings` table if quote_requests is pending schema migration
+      // Fallback insert to `bookings` table if schema is named bookings
       try {
         const { error: fallbackError } = await supabase.from('bookings').insert([{
           booking_ref: generatedId,
-          customer_name: payload.full_name,
-          mobile_number: payload.phone,
-          email: payload.email,
-          pickup_address: payload.pickup_location,
-          drop_address: payload.drop_location,
-          date: payload.moving_date,
-          time: payload.moving_time,
-          vehicle_type: payload.vehicle_type,
-          service_type: payload.service_type,
-          notes: payload.message,
+          customer_name: dbPayload.full_name,
+          mobile_number: dbPayload.phone,
+          email: dbPayload.email,
+          pickup_address: dbPayload.pickup_location,
+          drop_address: dbPayload.drop_location,
+          date: dbPayload.moving_date,
+          time: dbPayload.moving_time,
+          vehicle_type: dbPayload.vehicle_type,
+          service_type: dbPayload.service_type,
+          notes: dbPayload.message,
           status: 'pending',
         }]);
-        if (!fallbackError) isSaved = true;
+        if (!fallbackError) {
+          isSaved = true;
+        }
       } catch (err2) {
-        console.warn('Bookings fallback insert warning:', err2);
+        console.warn('Bookings fallback insert error:', err2);
       }
     }
   } catch (err: any) {
-    console.warn('Supabase Connection Error:', err?.message || err);
+    console.error('Supabase Connection Error:', err?.message || err);
+    saveErrorMessage = err?.message || 'Database connection error';
+  }
+
+  // Step 2: If direct database insert failed, fallback to Edge Function invocation
+  if (!isSaved) {
+    try {
+      const { data: edgeData, error: edgeError } = await supabase.functions.invoke('submit-quote', {
+        body: dbPayload,
+      });
+
+      if (!edgeError && edgeData && edgeData.success) {
+        isSaved = true;
+      }
+    } catch (edgeErr) {
+      console.warn('Edge Function fallback error:', edgeErr);
+    }
   }
 
   const whatsappNumber = COMPANY_INFO.whatsappNumber;
   const whatsappText = encodeURIComponent(
     `*New Quote Request - MRL Packers & Movers*\n\n` +
     `*Quote ID:* ${generatedId}\n` +
-    `*Customer:* ${payload.full_name}\n` +
-    `*Phone:* ${payload.phone}\n` +
-    `*Pickup:* ${payload.pickup_location}\n` +
-    `*Drop:* ${payload.drop_location}\n` +
-    `*Moving Date:* ${payload.moving_date}\n` +
-    `*Service:* ${payload.service_type}\n\n` +
+    `*Customer:* ${dbPayload.full_name}\n` +
+    `*Phone:* ${dbPayload.phone}\n` +
+    `*Pickup:* ${dbPayload.pickup_location}\n` +
+    `*Drop:* ${dbPayload.drop_location}\n` +
+    `*Moving Date:* ${dbPayload.moving_date}\n` +
+    `*Service:* ${dbPayload.service_type} (${dbPayload.vehicle_type})\n\n` +
     `Please confirm slot availability!`
   );
+  const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${whatsappText}`;
 
-  return {
-    success: true,
-    quoteId: generatedId,
-    message: 'Your quote request has been submitted successfully.',
-    savedToSupabase: isSaved,
-    whatsappUrl: `https://wa.me/${whatsappNumber}?text=${whatsappText}`,
-  };
+  if (isSaved) {
+    return {
+      success: true,
+      quoteId: generatedId,
+      message: 'Your quote request has been submitted successfully.',
+      savedToSupabase: true,
+      whatsappUrl,
+    };
+  } else {
+    return {
+      success: false,
+      quoteId: generatedId,
+      message: 'Unable to save your quote request to database. Please call our 24/7 helpline at +91 77770 42041.',
+      savedToSupabase: false,
+      whatsappUrl,
+      error: saveErrorMessage || 'Failed to save booking into Supabase database.',
+    };
+  }
 }
 
 /**

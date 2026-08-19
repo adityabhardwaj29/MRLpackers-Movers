@@ -53,7 +53,7 @@ Deno.serve(async (req: Request) => {
   try {
     const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown";
 
-    // 1. Rate Limiting Check (Max 15 requests per 10 minutes per IP)
+    // 1. Rate Limiting Check (Max 20 requests per 10 minutes per IP)
     const now = Date.now();
     const windowMs = 10 * 60 * 1000;
     const ipData = rateLimitMap.get(clientIp) || { count: 0, lastReset: now };
@@ -66,7 +66,7 @@ Deno.serve(async (req: Request) => {
     }
     rateLimitMap.set(clientIp, ipData);
 
-    if (ipData.count > 15) {
+    if (ipData.count > 20) {
       return new Response(
         JSON.stringify({ error: "Too many quote requests. Please try again in 10 minutes." }),
         { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -85,18 +85,21 @@ Deno.serve(async (req: Request) => {
     const isWebhook = Boolean(body.record && (body.type === "INSERT" || body.table));
     const record = isWebhook ? body.record : body;
 
-    // 3. Extract & Sanitize fields
-    const rawName = record.full_name || record.customer_name || record.name || "";
-    const rawPhone = record.phone || record.mobile_number || record.mobile || "";
+    console.log(`Processing quote request. Mode: ${isWebhook ? 'DATABASE_WEBHOOK' : 'DIRECT_INVOCATION'}`);
+
+    // 3. Extract & Sanitize fields from Webhook record or Direct payload
+    const rawName = record.full_name || record.customer_name || record.name || record.fullName || "";
+    const rawPhone = record.phone || record.mobile_number || record.mobile || record.phoneNumber || "";
     const rawEmail = record.email || "";
-    const rawPickup = record.pickup_location || record.pickup_address || record.pickup || "";
-    const rawDrop = record.drop_location || record.drop_address || record.drop || "";
-    const rawDate = record.moving_date || record.date || new Date().toISOString().split("T")[0];
-    const rawTime = record.moving_time || record.time || "Morning (8 AM - 12 PM)";
-    const rawService = record.service_type || record.service || "Household Shifting";
-    const rawVehicle = record.vehicle_type || record.move_size || record.moveSize || "2BHK";
-    const rawMessage = record.message || record.notes || record.additional_notes || "";
-    const incomingQuoteId = record.quote_id || record.booking_ref;
+    const rawPickup = record.pickup_location || record.pickup_address || record.pickupLocation || record.pickup || "";
+    const rawDrop = record.drop_location || record.drop_address || record.dropLocation || record.drop || "";
+    const rawDate = record.moving_date || record.date || record.movingDate || new Date().toISOString().split("T")[0];
+    const rawTime = record.moving_time || record.time || record.movingTime || "Morning (8 AM - 12 PM)";
+    const rawService = record.service_type || record.service || record.serviceType || "Household Shifting";
+    const rawVehicle = record.vehicle_type || record.vehicle || record.vehicleType || record.move_size || record.moveSize || "2BHK";
+    const rawMessage = record.message || record.notes || record.additional_notes || record.additionalNotes || "";
+    const incomingQuoteId = record.quote_id || record.booking_ref || record.quoteId;
+    const submittedAt = record.created_at || new Date().toISOString();
 
     const sanitizedName = String(rawName).trim().slice(0, 100);
     const sanitizedPhone = String(rawPhone).replace(/[^\d+]/g, "").slice(0, 15);
@@ -109,7 +112,7 @@ Deno.serve(async (req: Request) => {
     const sanitizedVehicle = String(rawVehicle).slice(0, 50);
     const sanitizedMessage = String(rawMessage).trim().slice(0, 500);
 
-    // Validation (for non-webhook direct requests)
+    // Validation (for direct client requests)
     if (!isWebhook) {
       if (!sanitizedName || sanitizedName.length < 2) {
         return new Response(JSON.stringify({ error: "Full name is required (at least 2 characters)." }), {
@@ -195,69 +198,85 @@ Deno.serve(async (req: Request) => {
 
     // 6. Send HTML Escaped Email via Resend API
     let emailSent = false;
-    const resendApiKey = Deno.env.get("RESEND_API_KEY");
-    const recipientEmail = Deno.env.get("NOTIFICATION_EMAIL") || "mrlpackersmovers7777@gmail.com";
+    let emailMessageId = "";
+    const rawResendKey = Deno.env.get("RESEND_API_KEY");
+    const resendApiKey = rawResendKey ? rawResendKey.trim() : "";
+    const recipientEmail = Deno.env.get("NOTIFICATION_EMAIL") || Deno.env.get("RESEND_TO_EMAIL") || "mrlpackersmovers7777@gmail.com";
     const fromEmail = Deno.env.get("RESEND_FROM_EMAIL") || "MRL Relocation <onboarding@resend.dev>";
 
     if (resendApiKey) {
       try {
-        const emailSubject = `🚀 New Quote Request #${quoteId} - ${escapeHtml(sanitizedName)}`;
+        const emailSubject = `New Booking Request - MRL Packers & Movers - ${quoteId}`;
         const htmlBody = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
-            <div style="background-color: #dc2626; color: #ffffff; padding: 18px; border-radius: 8px; text-align: center; margin-bottom: 20px;">
-              <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.5px;">MRL PACKERS &amp; MOVERS</h1>
-              <p style="margin: 4px 0 0 0; font-size: 13px; opacity: 0.95;">New Shifting Inquiry / Quote Request</p>
+          <div style="font-family: Arial, Helvetica, sans-serif; max-width: 620px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 14px; background-color: #ffffff; color: #1e293b;">
+            <div style="background-color: #dc2626; color: #ffffff; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 24px;">
+              <h1 style="margin: 0; font-size: 24px; font-weight: 900; letter-spacing: 0.5px;">MRL PACKERS &amp; MOVERS</h1>
+              <p style="margin: 6px 0 0 0; font-size: 14px; opacity: 0.95; font-weight: 600;">NEW BOOKING / QUOTE REQUEST</p>
             </div>
             
-            <table style="width: 100%; border-collapse: collapse; font-size: 14px; color: #1e293b;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 1.6;">
               <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; font-weight: bold; width: 35%; color: #64748b;">Quote ID:</td>
-                <td style="padding: 10px 0; color: #dc2626; font-weight: 800; font-family: monospace; font-size: 15px;">${escapeHtml(quoteId)}</td>
+                <td style="padding: 11px 0; font-weight: bold; width: 38%; color: #64748b;">Quote ID:</td>
+                <td style="padding: 11px 0; color: #dc2626; font-weight: 800; font-family: monospace; font-size: 16px;">${escapeHtml(quoteId)}</td>
               </tr>
               <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; font-weight: bold; color: #64748b;">Customer Name:</td>
-                <td style="padding: 10px 0; font-weight: 700;">${escapeHtml(sanitizedName || "Customer")}</td>
+                <td style="padding: 11px 0; font-weight: bold; color: #64748b;">Customer Name:</td>
+                <td style="padding: 11px 0; font-weight: 700; font-size: 15px;">${escapeHtml(sanitizedName || "Customer")}</td>
               </tr>
               <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; font-weight: bold; color: #64748b;">Mobile (WhatsApp):</td>
-                <td style="padding: 10px 0;"><a href="tel:${escapeHtml(sanitizedPhone)}" style="color: #dc2626; font-weight: 700; text-decoration: none;">${escapeHtml(sanitizedPhone)}</a></td>
+                <td style="padding: 11px 0; font-weight: bold; color: #64748b;">Phone:</td>
+                <td style="padding: 11px 0;"><a href="tel:${escapeHtml(sanitizedPhone)}" style="color: #dc2626; font-weight: 700; text-decoration: none; font-size: 15px;">${escapeHtml(sanitizedPhone)}</a></td>
               </tr>
               <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; font-weight: bold; color: #64748b;">Email Address:</td>
-                <td style="padding: 10px 0;">${sanitizedEmail ? `<a href="mailto:${escapeHtml(sanitizedEmail)}" style="color: #2563eb; text-decoration: none;">${escapeHtml(sanitizedEmail)}</a>` : "Not Provided"}</td>
+                <td style="padding: 11px 0; font-weight: bold; color: #64748b;">Email:</td>
+                <td style="padding: 11px 0;">${sanitizedEmail ? `<a href="mailto:${escapeHtml(sanitizedEmail)}" style="color: #2563eb; text-decoration: none;">${escapeHtml(sanitizedEmail)}</a>` : "Not Provided"}</td>
               </tr>
               <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; font-weight: bold; color: #64748b;">Pickup Location:</td>
-                <td style="padding: 10px 0; font-weight: 600;">${escapeHtml(sanitizedPickup)}</td>
+                <td style="padding: 11px 0; font-weight: bold; color: #64748b;">Pickup Address:</td>
+                <td style="padding: 11px 0; font-weight: 600;">${escapeHtml(sanitizedPickup)}</td>
               </tr>
               <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; font-weight: bold; color: #64748b;">Drop Location:</td>
-                <td style="padding: 10px 0; font-weight: 600;">${escapeHtml(sanitizedDrop)}</td>
+                <td style="padding: 11px 0; font-weight: bold; color: #64748b;">Drop Address:</td>
+                <td style="padding: 11px 0; font-weight: 600;">${escapeHtml(sanitizedDrop)}</td>
               </tr>
               <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; font-weight: bold; color: #64748b;">Moving Date &amp; Time:</td>
-                <td style="padding: 10px 0;">${escapeHtml(sanitizedDate)} (${escapeHtml(sanitizedTime)})</td>
+                <td style="padding: 11px 0; font-weight: bold; color: #64748b;">Moving Date:</td>
+                <td style="padding: 11px 0; font-weight: 600;">${escapeHtml(sanitizedDate)}</td>
               </tr>
               <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 0; font-weight: bold; color: #64748b;">Service &amp; Size:</td>
-                <td style="padding: 10px 0; font-weight: 600;">${escapeHtml(sanitizedService)} - ${escapeHtml(sanitizedVehicle)}</td>
+                <td style="padding: 11px 0; font-weight: bold; color: #64748b;">Moving Time:</td>
+                <td style="padding: 11px 0; font-weight: 600;">${escapeHtml(sanitizedTime)}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 11px 0; font-weight: bold; color: #64748b;">Service Type:</td>
+                <td style="padding: 11px 0; font-weight: 600;">${escapeHtml(sanitizedService)}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 11px 0; font-weight: bold; color: #64748b;">Vehicle Type / Move Size:</td>
+                <td style="padding: 11px 0; font-weight: 600;">${escapeHtml(sanitizedVehicle)}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 11px 0; font-weight: bold; color: #64748b; vertical-align: top;">Additional Notes:</td>
+                <td style="padding: 11px 0;">${escapeHtml(sanitizedMessage || "None")}</td>
               </tr>
               <tr>
-                <td style="padding: 10px 0; font-weight: bold; color: #64748b; vertical-align: top;">Notes / Details:</td>
-                <td style="padding: 10px 0;">${escapeHtml(sanitizedMessage || "None")}</td>
+                <td style="padding: 11px 0; font-weight: bold; color: #64748b;">Submitted At:</td>
+                <td style="padding: 11px 0; color: #64748b; font-size: 13px;">${escapeHtml(submittedAt)}</td>
               </tr>
             </table>
 
-            <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #e2e8f0; text-align: center;">
-              <a href="https://wa.me/${sanitizedPhone.replace(/[^0-9]/g, "")}?text=Hi%20${encodeURIComponent(sanitizedName)}%2C%20this%20is%20MRL%20Packers%20%26%20Movers%20regarding%20your%20quote%20request%20${encodeURIComponent(quoteId)}." style="background-color: #16a34a; color: #ffffff; padding: 12px 22px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; margin-right: 8px; font-size: 13px;">Chat on WhatsApp</a>
-              <a href="tel:${escapeHtml(sanitizedPhone)}" style="background-color: #dc2626; color: #ffffff; padding: 12px 22px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; font-size: 13px;">Call Customer</a>
+            <div style="margin-top: 26px; padding-top: 18px; border-top: 1px solid #e2e8f0; text-align: center;">
+              <a href="https://wa.me/${sanitizedPhone.replace(/[^0-9]/g, "")}?text=Hi%20${encodeURIComponent(sanitizedName)}%2C%20this%20is%20MRL%20Packers%20%26%20Movers%20regarding%20your%20quote%20request%20${encodeURIComponent(quoteId)}." style="background-color: #16a34a; color: #ffffff; padding: 13px 24px; text-decoration: none; border-radius: 9px; font-weight: bold; display: inline-block; margin-right: 10px; font-size: 14px;">Chat on WhatsApp</a>
+              <a href="tel:${escapeHtml(sanitizedPhone)}" style="background-color: #dc2626; color: #ffffff; padding: 13px 24px; text-decoration: none; border-radius: 9px; font-weight: bold; display: inline-block; font-size: 14px;">Call Customer</a>
             </div>
 
-            <p style="font-size: 11px; color: #94a3b8; text-align: center; margin-top: 25px; margin-bottom: 0;">
-              MRL Packers &amp; Movers • Kandivali East, Mumbai • 24/7 Helpline: 7777042041 / 8657972041
+            <p style="font-size: 11px; color: #94a3b8; text-align: center; margin-top: 28px; margin-bottom: 0;">
+              MRL Packers &amp; Movers • Kandivali East, Mumbai • 24/7 Helpline: +91 77770 42041 / +91 86579 72041
             </p>
           </div>
         `;
+
+        console.log(`Dispatching Resend email from "${fromEmail}" to "${recipientEmail}" for Quote: ${quoteId}`);
 
         const emailRes = await fetch("https://api.resend.com/emails", {
           method: "POST",
@@ -274,14 +293,19 @@ Deno.serve(async (req: Request) => {
         });
 
         if (emailRes.ok) {
+          const resJson = await emailRes.json().catch(() => ({}));
           emailSent = true;
+          emailMessageId = resJson.id || "sent";
+          console.log(`✓ Resend email successfully delivered! ID: ${emailMessageId}`);
         } else {
           const errText = await emailRes.text().catch(() => "");
-          console.warn("Resend API warning:", emailRes.status, errText);
+          console.error(`✗ Resend API returned error status ${emailRes.status}:`, errText);
         }
       } catch (err) {
-        console.warn("Email dispatch warning:", err);
+        console.error("✗ Exception during Resend email dispatch:", err);
       }
+    } else {
+      console.warn("⚠️ RESEND_API_KEY secret is not set in Supabase Edge Function Secrets.");
     }
 
     // 7. Format Official WhatsApp Link (+91 77770 42041)
@@ -305,14 +329,16 @@ Deno.serve(async (req: Request) => {
         quote_id: quoteId,
         message: "Your quote request has been submitted successfully.",
         email_sent: emailSent,
+        email_id: emailMessageId || null,
         whatsapp_url: whatsappUrl,
+        mode: isWebhook ? "webhook" : "direct",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: any) {
-    console.error("Edge Function error:", error);
+    console.error("Edge Function unhandled error:", error);
     return new Response(
-      JSON.stringify({ error: "Unable to submit your quote request at this moment. Please call our 24/7 helpline." }),
+      JSON.stringify({ error: "Unable to process quote request. Please call our 24/7 helpline." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
