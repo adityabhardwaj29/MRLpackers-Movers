@@ -33,17 +33,40 @@ export function generateQuoteId(): string {
   return `MRL-${currentYear}-${randomNum}`;
 }
 
+function sanitizeMovingDate(dateStr?: string): string {
+  if (!dateStr || !dateStr.trim()) {
+    return new Date().toISOString().split('T')[0];
+  }
+  const clean = dateStr.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
+  const parts = clean.split(/[-/]/);
+  if (parts.length === 3) {
+    if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+  }
+  const parsed = new Date(clean);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0];
+  }
+  return new Date().toISOString().split('T')[0];
+}
+
 // In-flight & recent submission deduplication cache (blocks duplicates within 4 seconds)
 let lastSubmissionHash = '';
 let lastSubmissionTime = 0;
 let lastSubmissionResult: QuoteRequestResult | null = null;
 
 /**
- * 1. CREATE QUOTE REQUEST: Saves customer quote directly into Supabase PostgreSQL table `quote_requests`.
- * When inserted, the configured Supabase Database Webhook automatically triggers the `submit-quote` Edge Function (READ-ONLY).
+ * CREATE QUOTE REQUEST: Saves customer quote directly into Supabase PostgreSQL table `quote_requests`.
+ * When inserted, the configured Supabase Database Webhook `mrl_booking_webhook` automatically triggers
+ * the `submit-quote` Edge Function (which is strictly READ-ONLY for DB).
  */
 export async function createBooking(data: QuoteFormData, userId?: string, estimatedPrice?: number): Promise<QuoteRequestResult> {
-  const currentHash = `${data.phone.trim()}_${data.pickupLocation.trim()}_${data.dropLocation.trim()}_${data.movingDate}`;
+  const cleanPhone = data.phone.replace(/[^\d+]/g, '').trim();
+  const cleanPickup = data.pickupLocation.trim();
+  const cleanDrop = data.dropLocation.trim();
+  const cleanDate = sanitizeMovingDate(data.movingDate);
+  const currentHash = `${cleanPhone}_${cleanPickup}_${cleanDrop}_${cleanDate}`;
   const now = Date.now();
 
   // Deduplication check: if identical data was submitted < 4000ms ago and succeeded, return previous result
@@ -57,11 +80,11 @@ export async function createBooking(data: QuoteFormData, userId?: string, estima
   const dbPayload = {
     quote_id: generatedId,
     full_name: data.name.trim(),
-    phone: data.phone.trim(),
+    phone: cleanPhone,
     email: data.email?.trim() || null,
-    pickup_location: data.pickupLocation.trim(),
-    drop_location: data.dropLocation.trim(),
-    moving_date: data.movingDate || new Date().toISOString().split('T')[0],
+    pickup_location: cleanPickup,
+    drop_location: cleanDrop,
+    moving_date: cleanDate,
     moving_time: data.movingTime || 'Morning (8 AM - 12 PM)',
     service_type: data.serviceType || 'Household Shifting',
     vehicle_type: data.moveSize || '2BHK',
@@ -72,7 +95,7 @@ export async function createBooking(data: QuoteFormData, userId?: string, estima
   let isSaved = false;
   let saveErrorMessage = '';
 
-  // Exactly ONE direct insert into `quote_requests`
+  // Exactly ONE direct insert into `quote_requests` (without .select() to respect RLS)
   try {
     const { error: dbError } = await supabase
       .from('quote_requests')
@@ -151,7 +174,7 @@ export async function createBooking(data: QuoteFormData, userId?: string, estima
 }
 
 /**
- * 2. FETCH BOOKINGS / QUOTES (For authorized admin use)
+ * FETCH BOOKINGS / QUOTES (For authorized admin use)
  */
 export async function fetchBookings(statusFilter?: string, searchQuery?: string): Promise<DbBooking[]> {
   try {
